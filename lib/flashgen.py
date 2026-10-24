@@ -33,6 +33,8 @@ def write(out, super_parts, summary):
         b.append("fastboot delete-logical-partition %s >nul 2>&1" % p)
     for p in parts:
         b.append("fastboot create-logical-partition %s 0 || goto :err" % p)
+    b.append("fastboot reboot fastboot || goto :err")
+    for p in parts:
         b.append('fastboot flash %s "%%OUT%%%s.img" || goto :err' % (p, p))
     b += ["fastboot reboot bootloader || goto :err",
           "fastboot format:f2fs userdata || goto :err",
@@ -53,6 +55,8 @@ def write(out, super_parts, summary):
         s.append("fastboot delete-logical-partition %s >/dev/null 2>&1 || true" % p)
     for p in parts:
         s.append("fastboot create-logical-partition %s 0" % p)
+    s.append("fastboot reboot fastboot")
+    for p in parts:
         s.append('fastboot flash %s "$OUT/%s.img"' % (p, p))
     s += ["fastboot reboot bootloader", "fastboot format:f2fs userdata", "fastboot format:ext4 cache",
           'fastboot flash dtbo "$OUT/dtbo.img"', 'fastboot flash boot "$OUT/boot.img"', "fastboot reboot",
