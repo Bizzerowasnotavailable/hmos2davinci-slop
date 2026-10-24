@@ -130,7 +130,11 @@ def fetch(img, blobs, outdir):
         src, dst = b["from"], os.path.join(outdir, b["to"])
         if src.endswith("/"):
             mkdirs(dst)
-            tmp = mkdirs(os.path.join(outdir, ".rdump"))
+            # a fresh folder for every directory blob: the previous one may not be removable
+            n = 0
+            while os.path.exists(os.path.join(outdir, ".rdump%d" % n)):
+                n += 1
+            tmp = mkdirs(os.path.join(outdir, ".rdump%d" % n))
             _debugfs(img, "rdump /%s %s" % (src.rstrip("/"), tmp))
             name = os.path.basename(src.rstrip("/"))
             if not os.path.isdir(os.path.join(tmp, name)):

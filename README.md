@@ -21,7 +21,7 @@ on the Redmi Note 10 Pro. The userspace stays Huawei's. What changes is undernea
 | GPU Adreno 618 (Mesa freedreno, OpenGL ES) | ✅ |
 | Touch, volume/power keys | ✅ |
 | WiFi, Bluetooth, GPS, audio | ✅ (reported working on the device) |
-| Lock screen | 🟡 swipe works; PIN/password through OpenHarmony's REE user_auth/pin_auth (being debugged) |
+| Lock screen, PIN/password | 🟡 OpenHarmony's REE user_auth/pin_auth without TEE (fixed in iter42: vtable mismatch with HarmonyOS's HDI) |
 | Sensors for apps (accelerometer, gyroscope, compass, light, gravity/rotation) | 🟡 HAL on the Snapdragon Sensor Core over QRTR/QMI |
 | Battery, charging, off-mode charging | 🟡 standard HarmonyOS HAL on sweet's power_supply; with a charger plugged in "power off" keeps the phone off and charging |
 | Vibration | 🟡 aw8624 exposed as /sys/class/leds/vibrator (timed vibration; no haptic effects) |
@@ -54,23 +54,31 @@ they find and skip the step if the file is not the expected one.
 
 ## Getting the firmware: fetchfw
 
-`fetchfw` lists the HarmonyOS packages available for the **Huawei Pura 70**, lets you pick one, downloads it
-(resumable, sha256-checked) and then starts `hmos2sweet.py` on it:
+`fetchfw` looks for every HarmonyOS package available for the **Huawei Pura 70**, shows the list, downloads
+the one you pick (resumable, sha256-checked) and then starts `hmos2sweet.py` on it:
 
 ```sh
-python3 fetchfw.py                                        # choose, download, port
+python3 fetchfw.py                                        # search, choose, download, port
 python3 fetchfw.py -- --sweet-rom ~/lineage-sweet.zip --patches defaults
 python3 fetchfw.py --list                                 # only list
 python3 fetchfw.py --url <package URL>                    # check and add a package you found
-python3 fetchfw.py --online                               # also ask Huawei's update service (experimental)
+python3 fetchfw.py --offline                              # only the catalogs on this computer
 ```
 
-On Windows `fetchfw.bat` does the same. Huawei's CDN paths contain a random id, so packages cannot be
-enumerated: candidates come from the catalog in `lib/fetchfw_catalog.json`, from your own list
-(`~/.hmos2sweet_fw.json`, filled automatically by `--url`) and, with `--online`, from Huawei's update query
-service (undocumented protocol, best effort). **Every candidate is verified before it is offered**: its
-`filelist.xml` and the headers inside the zip (`packageinfo.mbn`, `VERSION.mbn`, read with HTTP range
-requests) must describe a full BASE package of a Pura 70 (`ADY-*`); anything else is rejected.
+On Windows `fetchfw.bat` does the same. Where the packages come from:
+
+- the shared catalog of this repository (`lib/fetchfw_catalog.json`, also read online from GitHub, so new
+  entries reach every copy of the tool);
+- public pages that list Huawei full packages (their `update_full_base.zip` links are collected);
+- Huawei's update services (the HarmonyOS 5 `hota/version-query` one and the older `Check.action`): they
+  normally answer only requests signed by a real phone, so they rarely add anything;
+- your own list (`~/.hmos2sweet_fw.json`), filled automatically with every package found or added with `--url`.
+
+Huawei's CDN paths contain a random id, so the packages cannot be enumerated directly. **Every candidate is
+verified before it is offered**: its `filelist.xml` and the headers inside the zip (`packageinfo.mbn`,
+`VERSION.mbn`, read with HTTP range requests) must describe a full BASE package of a Pura 70 (`ADY-*`);
+packages of other phones are skipped. To share a new Pura 70 package with everybody, add it to
+`lib/fetchfw_catalog.json` with a pull request.
 
 ## Usage
 

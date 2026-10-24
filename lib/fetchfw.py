@@ -31,6 +31,10 @@ PURA70_MODELS = ("ADY-AL00", "ADY-AL10")
 UA = "Mozilla/5.0 (Linux; HarmonyOS) hmos2sweet-fetchfw"
 CATALOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fetchfw_catalog.json")
 USER_CATALOG = os.path.join(os.path.expanduser("~"), ".hmos2sweet_fw.json")
+# shared list maintained in the repository: new packages show up for everybody without updating the tool
+REMOTE_CATALOGS = (
+    "https://raw.githubusercontent.com/tsryzenstech/hmos2sweet/main/lib/fetchfw_catalog.json",
+)
 TIMEOUT = 30
 
 
@@ -239,6 +243,45 @@ def load_catalogs():
     return entries
 
 
+def load_remote_catalogs(log=print):
+    entries = []
+    for url in REMOTE_CATALOGS:
+        try:
+            data = json.loads(http_get(url, limit=4 << 20).decode("utf-8"))
+        except (FwError, ValueError) as e:
+            log("  %s: %s" % (url, e))
+            continue
+        for e in data.get("packages", []):
+            e = dict(e)
+            e["source"] = "online catalog"
+            entries.append(e)
+    return entries
+
+
+# public pages that list Huawei full packages: every update_full_base.zip URL found there is checked, the
+# Pura 70 ones are offered
+LINK_PAGES = (
+    "https://raw.githubusercontent.com/SimomYung/unpack_huawei_package/main/README.md",
+    "https://raw.githubusercontent.com/SimomYung/unpack_huawei_package/master/README.md",
+)
+PKG_URL_RE = re.compile(r"https?://update\.dbankcdn\.com/[A-Za-z0-9_./%-]+?/v\d+/[A-Za-z0-9_-]+/full/update_full_base\.zip")
+
+
+def scan_link_pages(log=print):
+    found = []
+    for url in LINK_PAGES:
+        try:
+            txt = http_get(url, limit=4 << 20).decode("utf-8", "replace")
+        except FwError:
+            continue
+        for u in PKG_URL_RE.findall(txt):
+            if u not in found:
+                found.append(u)
+    if found:
+        log("  %d package links found on public pages" % len(found))
+    return [{"url": u, "source": "public list"} for u in found]
+
+
 def remember(info):
     """Add a verified package to the user catalog so it is listed next time."""
     try:
@@ -263,6 +306,9 @@ def remember(info):
 QUERY_ENDPOINTS = (
     "https://query.hicloud.com/sp_ard_common/v2/Check.action?latest=true",
     "https://query.hicloud.com/sp_ard_common/v2/onestopCheck.action?verType=true",
+    # HarmonyOS 5 update engine (libdupdate_engine_service): /hota/version-query/v1/dynamiclane/versioncheck
+    "https://update.platform.dbankcloud.com/hota/version-query/v1/dynamiclane/versioncheck",
+    "https://update.platform.dbankcloud.cn/hota/version-query/v1/dynamiclane/versioncheck",
 )
 
 
@@ -275,6 +321,9 @@ def query_online(log=print):
                 {"rules": {"FirmWare": ver, "DeviceName": model, "PackageType": "full", "Language": "zh-cn",
                            "OS": "HarmonyOS", "C_version": "C00", "D_version": "D000", "IMEI": "",
                            "deviceId": "", "saleinfo": "CN"}},
+                {"deviceName": model, "deviceModel": model, "versionPackageType": "full", "language": "zh-cn",
+                 "currentVersionList": [{"versionNumber": ver, "componentType": "TCPU"}],
+                 "osVersion": "HarmonyOS 5.0.0", "vendorCountry": "all-cn", "deviceType": "phone"},
                 {"commonRules": {"deviceName": model, "language": "zh-cn", "OS": "HarmonyOS",
                                  "PackageType": "full", "udid": "", "deviceId": "", "saleinfo": "CN",
                                  "vendorCountry": "all-cn"},

@@ -1372,8 +1372,8 @@ int32_t UserAuthInterfaceService::CheckReuseUnlockResult(const ReuseUnlockParam&
     if (param.authTypes.empty() || param.authTypes.size() > MAX_AUTH_TYPE_LEN ||
         param.reuseUnlockResultDuration == 0 || param.reuseUnlockResultDuration > REUSED_UNLOCK_TOKEN_PERIOD ||
         (param.reuseUnlockResultMode != AUTH_TYPE_RELEVANT && param.reuseUnlockResultMode != AUTH_TYPE_IRRELEVANT &&
-        param.reuseUnlockResultMode != CALLER_IRRELEVANT_AUTH_TYPE_RELEVANT &&
-        param.reuseUnlockResultMode != CALLER_IRRELEVANT_AUTH_TYPE_IRRELEVANT)) {
+        param.reuseUnlockResultMode != 3 /* CALLER_IRRELEVANT_AUTH_TYPE_RELEVANT */ &&
+        param.reuseUnlockResultMode != 4 /* CALLER_IRRELEVANT_AUTH_TYPE_IRRELEVANT */)) {
         IAM_LOGE("checkReuseUnlockResult bad param");
         return RESULT_BAD_PARAM;
     }
@@ -1748,6 +1748,7 @@ int32_t UserAuthInterfaceService::GetCredentialById(uint64_t credentialId, HdiCr
     return RESULT_SUCCESS;
 }
 
+#ifdef USER_AUTH_HAS_VERIFY_AUTH_TOKEN /* not in the HDI v3.0 of HarmonyOS 5.x (OpenHarmony 5.0 IDL) */
 static bool CopyAuthTokenPlainHal(const UserAuthTokenPlainHal &tokenIn, HdiUserAuthTokenPlain &tokenOut)
 {
     tokenOut.userId = tokenIn.tokenDataToEncrypt.userId;
@@ -1859,6 +1860,7 @@ int32_t UserAuthInterfaceService::VerifyAuthToken(const std::vector<uint8_t> &to
     }
     return result;
 }
+#endif /* USER_AUTH_HAS_VERIFY_AUTH_TOKEN */
 } // Userauth
 } // HDI
 } // OHOS

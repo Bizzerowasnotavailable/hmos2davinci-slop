@@ -2,7 +2,8 @@
 # PIN lock screen without TEE: OpenHarmony's REE user_auth and pin_auth HDI
 # services (drivers_peripheral, OpenHarmony-5.1.0-Release) built for the Pura 70
 # userspace. They replace Huawei's TEE-backed services and drivers.
-# Needs: ohos-clang++ (sysroot), the generated HDI headers of user_auth v3_0 and
+# Needs: ohos-clang++ (sysroot), the generated HDI headers of user_auth v3_0 (from the
+# OpenHarmony-v5.0.3-Release IDL: HarmonyOS 5.x has no VerifyAuthToken, a different vtable) and
 # pin_auth v2_1 (hdi-gen, see docs), openssl headers, and the Huawei libraries
 # to link against in $IAMLIBS (libhdf_host, libpin_auth_stub_2.1, libuser_auth_stub_3.0).
 set -e

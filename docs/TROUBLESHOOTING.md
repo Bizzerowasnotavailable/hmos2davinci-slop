@@ -39,7 +39,7 @@ Useful hilog tags:
 | Bluetooth does not turn on | `sweet-bt:` lines in kmsg: chip version, crbtfw/crnv files, HCI reset answer |
 | Spontaneous reboots | run `get_logs` right after: `pstore/` and the `kmsg` of the previous boot show the cause; look for `crashed`, `critical`, `subsys-restart`, `Kernel panic`. Patch 15 removes the reboots for crashing services, kernel patch 0013 those for a slow ADSP/modem |
 | "Power off" restarts the phone | with a cable plugged in this is off-mode charging: since this release the phone stays off and charges. Without a cable, look for `hmos: power off requested` in pstore |
-| PIN asked at boot although none was set | lock screen credentials (patch 46): send the logs (`USER_AUTH_HDI`/`PIN_AUTH_HDI` in hilog). Without patch 46 the lock screen is swipe-only |
+| PIN asked at boot although none was set | fixed in iter42 (user_auth HDI built for the HarmonyOS 5.x interface). If it comes back: `USER_AUTH_HDI` in hilog, "VerifyAuthToken bad param" means the interface does not match |
 | Sensors missing in apps | `sweet-sensors:` lines in kmsg: if it stays at "waiting for the SSC", the ADSP sensors domain did not start (see `hexagonrpcd`) |
 | `tqftpserv: read/write <file> -> error` in kmsg | file the modem asks the TFTP server for: if `wlanmdsp.mbn` or a readwrite folder is missing, WiFi does not start |
 | hdc does not see the phone | enable developer options and USB debugging; look for `a600000.dwc3` / `configfs` in kmsg |

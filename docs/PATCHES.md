@@ -566,7 +566,7 @@ init commands:
 
 **PIN / password lock screen without TEE**
 
-Huawei's user_auth and pin_auth HDI services keep credentials in their TEE (iTrustee), which sweet does not have: a PIN could be set but the lock screen stayed swipe-only. They are replaced by OpenHarmony's own REE implementation (drivers_peripheral user_auth 3.0 / pin_auth 2.1, OpenHarmony-5.1.0-Release, Apache-2.0), which keeps the PIN data salted and hashed in /data/service/el1/public/{pinauth,userauth}.
+Huawei's user_auth and pin_auth HDI services keep credentials in their TEE (iTrustee), which sweet does not have: a PIN could be set but the lock screen stayed swipe-only. They are replaced by OpenHarmony's own REE implementation (drivers_peripheral user_auth 3.0 / pin_auth 2.1, OpenHarmony-5.1.0-Release, Apache-2.0), which keeps the PIN data salted and hashed in /data/service/el1/public/{pinauth,userauth}. The user_auth service is built against the OpenHarmony 5.0 IDL of user_auth v3.0, the one HarmonyOS 5.x uses (no VerifyAuthToken): with the 5.1 IDL Huawei's stub called the wrong methods and the lock screen asked for a PIN that was never set.
 
 Files added to /vendor:
 
