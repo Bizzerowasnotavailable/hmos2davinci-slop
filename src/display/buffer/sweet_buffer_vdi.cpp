@@ -73,6 +73,7 @@ bool GetFormatInfo(uint32_t format, FormatInfo &fi)
         case PIXEL_FMT_VYUY_422_PKG:
         case PIXEL_FMT_YUV_422_I:
             fi = {16, 1, 1}; return true;
+        case 38: /* PIXEL_FMT_BLOB: camera JPEG output, sized like a 4:2:0 frame */
         case PIXEL_FMT_YCBCR_420_SP:
         case PIXEL_FMT_YCRCB_420_SP:
         case PIXEL_FMT_YCBCR_420_P:

@@ -1,56 +1,64 @@
-# Problemi noti e log
+# Known issues and logs
 
-## Leggere i log
+## Reading the logs
 
-Ogni avvio lascia nella partizione `cache` (`/log/hmos` su HarmonyOS):
+Every boot leaves in the `cache` partition (`/log/hmos` on HarmonyOS):
 
-| File | Contenuto |
+| File | Content |
 |---|---|
-| `kmsg-N.log` | log del kernel |
+| `kmsg-N.log` | kernel log |
 | `boot-N/hilog-stream-*.txt` | hilog |
-| `snapN-*.txt` | processi, servizi, mount, parametri, stato GPU/display |
-| `screen-*.jpeg` | screenshot |
+| `snapN-*.txt` | processes, threads, services, mounts, parameters, GPU/display state |
+| `screen-*.jpeg` | screenshots |
 
-Per scaricarli: recovery (Power + Volume su), poi `get_logs.bat` / `get_logs.sh`.
+HarmonyOS's own logs are in `/data/log` (hilog, faultlog). To download everything: recovery (Power + Volume up),
+then `get_logs.bat` / `get_logs.sh`. `pstore/` holds the last kernel messages before a reboot.
 
-Righe utili nel kmsg:
+Useful lines in kmsg:
 
-- `sweet-rproc:`: partizione firmware, ADSP, modem, `wlan0`, scheda audio;
-- `sweet-oobedone:`: chiavi del setup scritte nel database delle impostazioni;
-- `sweet-sensors:`: HAL sensori (servizio SSC trovato, SUID di ogni sensore, errori).
+- `sweet-rproc:` firmware partition, ADSP, modem, `wlan0`, sound card, mobile data;
+- `sweet-oobedone:` setup keys written into the settings database;
+- `sweet-sensors:` sensors HAL (SSC service found, SUID of every sensor, errors);
+- `hmos: power off requested by` / `hmos: reboot("...") requested by`: who asked for a power off or a restart;
+- `hmos-preinit: androidboot.mode=charger`: the phone started in off-mode charging;
+- `cambridge:` / `sweetcam-launch:` camera bridge (work in progress).
 
-Tag utili in hilog:
+Useful hilog tags:
 
-- `SWEET_AUDIO`: HAL audio;
+- `SWEET_AUDIO`: audio HAL;
 - `composer_host`: display;
-- `C04201/foundation/DMS`: schermi visti dal window manager.
+- `C04201/foundation/DMS`: screens seen by the window manager;
+- `USER_AUTH_HDI`, `PIN_AUTH_HDI`, `USER_AUTH_SA`: lock screen credentials.
 
-## Problemi noti
+## Known issues
 
-| Sintomo | Stato |
+| Symptom | Status |
 |---|---|
-| ADSP che si riavvia ogni ~40 s (`sensor_process ... USER-PD DOG`) | serve la patch 34 (hexagonrpcd); se continua, cerca `hexagonrpcd` e `adsprpc` nel kmsg |
-| `wlan: /dev/wlan ON -> -22`, nessun `wlan0` | cerca `sweet: board id` / `BDF download` (icnss) nel kmsg: il kernel deve inviare bdwlan al firmware |
-| Bluetooth che non si accende | righe `sweet-bt:` nel kmsg: versione del chip, file crbtfw/crnv, risposta all'HCI reset |
-| Riavvii spontanei | `get_logs` subito dopo: `pstore/` e il `kmsg` dell'avvio precedente mostrano la causa; cerca `crashed`, `critical`, `subsys-restart`, `Kernel panic`. La patch 15 toglie i riavvii per servizi che crashano, la patch kernel 0013 quelli per un ADSP/modem lento |
-| Sensori assenti nelle app | righe `sweet-sensors:` nel kmsg: se resta su "waiting for the SSC", il dominio sensori dell'ADSP non è partito (vedi `hexagonrpcd`) |
-| `tqftpserv: read/write <file> -> errore` nel kmsg | file che il modem chiede al server TFTP: se manca `wlanmdsp.mbn` o una cartella readwrite il WiFi non parte |
-| hdc non vede il telefono | attiva opzioni sviluppatore e debug USB; nel kmsg cerca `a600000.dwc3` / `configfs` |
-| Setup bloccato sulla schermata WiFi | attiva "Remove the setup wizard" (`--no-setup-wizard`) |
-| Fotocamera | non portata: su sweet richiede lo stack Qualcomm CamX (librerie Android) o un driver ISP scritto da zero |
-| Impronta | non portata: il sensore è gestito da una trusted app nel TEE Qualcomm (QSEE) |
-| Telefonia, GPS | non portati: serve un RIL/GNSS HarmonyOS che parli QMI con il modem |
-| Prossimità | il sensore di sweet è a ultrasuoni (gestito dal DSP audio), non incluso |
-| Video HEVC oltre 1920 px | limite nel servizio media, la patch 40 non basta |
+| ADSP restarting every ~40 s (`sensor_process ... USER-PD DOG`) | needs patch 34 (hexagonrpcd); if it goes on, look for `hexagonrpcd` and `adsprpc` in kmsg |
+| `wlan: /dev/wlan ON -> -22`, no `wlan0` | look for `sweet: board id` / `BDF download` (icnss) in kmsg: the kernel must send bdwlan to the firmware |
+| Bluetooth does not turn on | `sweet-bt:` lines in kmsg: chip version, crbtfw/crnv files, HCI reset answer |
+| Spontaneous reboots | run `get_logs` right after: `pstore/` and the `kmsg` of the previous boot show the cause; look for `crashed`, `critical`, `subsys-restart`, `Kernel panic`. Patch 15 removes the reboots for crashing services, kernel patch 0013 those for a slow ADSP/modem |
+| "Power off" restarts the phone | with a cable plugged in this is off-mode charging: since this release the phone stays off and charges. Without a cable, look for `hmos: power off requested` in pstore |
+| PIN asked at boot although none was set | lock screen credentials (patch 46): send the logs (`USER_AUTH_HDI`/`PIN_AUTH_HDI` in hilog). Without patch 46 the lock screen is swipe-only |
+| Sensors missing in apps | `sweet-sensors:` lines in kmsg: if it stays at "waiting for the SSC", the ADSP sensors domain did not start (see `hexagonrpcd`) |
+| `tqftpserv: read/write <file> -> error` in kmsg | file the modem asks the TFTP server for: if `wlanmdsp.mbn` or a readwrite folder is missing, WiFi does not start |
+| hdc does not see the phone | enable developer options and USB debugging; look for `a600000.dwc3` / `configfs` in kmsg |
+| Setup stuck on the WiFi screen | enable "Remove the setup wizard" (`--no-setup-wizard`) |
+| Camera | in progress (`src/camera`): Qualcomm CamX in an Android namespace + OpenHarmony camera host |
+| Fingerprint | not ported: the sensor is handled by a trusted app in the Qualcomm TEE (QSEE) |
+| Proximity | sweet's sensor is ultrasonic (handled by the audio DSP), not included |
+| HEVC video above 1920 px | limit in the media service, patch 40 is not enough |
 
-## Schermo nero
+## Black screen
 
-- **Nero dall'inizio**: nel kmsg cerca `can not pick a crtc` / `skip connector` (connettori DRM), poi controlla
-  le righe `composer_host` in hilog.
-- **Nero dopo la bootanimation**: se SceneBoard si riavvia in loop con
-  `GetDefaultDisplaySync: Get display info failed`, il window manager non ha ricevuto lo schermo. Controlla che il
-  composer abbia creato un solo display con id 0.
+- **Black from the start**: look for `can not pick a crtc` / `skip connector` (DRM connectors) in kmsg, then the
+  `composer_host` lines in hilog.
+- **Black after the boot animation**: if SceneBoard restarts in a loop with
+  `GetDefaultDisplaySync: Get display info failed`, the window manager did not get the screen. Check that the
+  composer created a single display with id 0.
+- **Backlight on but no image after pressing power**: fixed (composer fence ownership). If it comes back,
+  `threads.txt` in the logs shows the fd count of `composer_host` and `render_service`.
 
-## Tornare ad Android
+## Going back to Android
 
-Dalla recovery flasha una ROM per sweet. La ROM ricrea le partizioni logiche di Android nel `super`.
+Flash a sweet ROM from recovery. The ROM recreates Android's logical partitions in `super`.

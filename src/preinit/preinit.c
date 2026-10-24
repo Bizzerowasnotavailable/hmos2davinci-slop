@@ -38,6 +38,8 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <linux/reboot.h>
+#include <linux/input.h>
+#include <sys/reboot.h>
 
 #define REAL_INIT "/bin/init_early"
 #define LP_RESERVED 4096
@@ -902,6 +904,95 @@ static void start_logger(void)
 	umount2("/hmoslog", MNT_DETACH);
 }
 
+/*
+ * Off-mode charging: with a charger plugged in, "power off" makes the PMIC
+ * start the phone again and the bootloader passes androidboot.mode=charger.
+ * Android shows its charging screen then; booting HarmonyOS here would look
+ * like the phone rebooted instead of switching off. Stay in a minimal loop
+ * (screen off, charging continues in hardware): unplugging the charger powers
+ * the phone off, holding the power key for 1.5 s boots HarmonyOS.
+ */
+static int read_int_file(const char *p)
+{
+	char b[16] = {0};
+	int fd = open(p, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return -1;
+	int n = read(fd, b, sizeof(b) - 1);
+	close(fd);
+	return n > 0 ? atoi(b) : -1;
+}
+
+static int charger_online(void)
+{
+	static const char *nodes[] = {
+		"/sys/class/power_supply/usb/online", "/sys/class/power_supply/usb/present",
+		"/sys/class/power_supply/ac/online", "/sys/class/power_supply/dc/online",
+	};
+	int seen = 0;
+	for (unsigned i = 0; i < sizeof(nodes) / sizeof(nodes[0]); i++) {
+		int v = read_int_file(nodes[i]);
+		if (v > 0)
+			return 1;
+		if (v == 0)
+			seen = 1;
+	}
+	return seen ? 0 : 1; /* unknown: assume plugged in */
+}
+
+static void charger_mode(void)
+{
+	klog("androidboot.mode=charger: off-mode charging (unplug = power off, hold power = boot)");
+	int fds[16], nfd = 0;
+	for (int i = 0; i < 16 && nfd < 16; i++) {
+		char p[32];
+		snprintf(p, sizeof(p), "/dev/input/event%d", i);
+		int fd = open(p, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+		if (fd >= 0)
+			fds[nfd++] = fd;
+	}
+	struct timespec down = {0};
+	int pressed = 0, unplugged = 0;
+	for (;;) {
+		struct pollfd pf[16];
+		for (int i = 0; i < nfd; i++) {
+			pf[i].fd = fds[i];
+			pf[i].events = POLLIN;
+			pf[i].revents = 0;
+		}
+		poll(pf, nfd, 500);
+		for (int i = 0; i < nfd; i++) {
+			struct input_event ev;
+			while (read(fds[i], &ev, sizeof(ev)) == (ssize_t)sizeof(ev)) {
+				if (ev.type == EV_KEY && ev.code == KEY_POWER) {
+					pressed = ev.value != 0;
+					if (pressed)
+						clock_gettime(CLOCK_MONOTONIC, &down);
+				}
+			}
+		}
+		if (pressed) {
+			struct timespec now;
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			long ms = (now.tv_sec - down.tv_sec) * 1000 + (now.tv_nsec - down.tv_nsec) / 1000000;
+			if (ms >= 1500) {
+				klog("power key held: booting HarmonyOS");
+				sync();
+				syscall(__NR_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_RESTART, NULL);
+			}
+		}
+		if (!charger_online()) {
+			if (++unplugged >= 4) {
+				klog("charger unplugged: powering off");
+				sync();
+				syscall(__NR_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_POWER_OFF, NULL);
+			}
+		} else {
+			unplugged = 0;
+		}
+	}
+}
+
 int main(int argc, char **argv)
 {
 	(void)argc;
@@ -939,6 +1030,9 @@ int main(int argc, char **argv)
 		klog("boot verbose on (kms fd %d)", kms_fd);
 	}
 	start_logger();
+
+	if (strstr(cmdline, "androidboot.mode=charger") && !strstr(cmdline, "hmos.charger=boot"))
+		charger_mode();
 
 	klog("handing over to " REAL_INIT);
 	if (kfd >= 0)

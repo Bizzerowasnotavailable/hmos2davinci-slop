@@ -1,163 +1,217 @@
-# Come funziona il port
+# How the port works
 
-## Partenza
+## Starting point
 
-- **Donatore**: Huawei Pura 70 (Kirin 9010), HarmonyOS 5.1 = OpenHarmony 5.0/5.1 + servizi Huawei.
-- **Destinazione**: Redmi Note 10 Pro *sweet* (Snapdragon 732G / sm6150, Adreno 618, WCN3990, codec Bolero +
-  2× Awinic aw882xx, pannello AMOLED 1080x2400 120 Hz).
+- **Donor**: Huawei Pura 70 (Kirin 9010), HarmonyOS 5.1 = OpenHarmony 5.0/5.1 + Huawei services.
+- **Target**: Redmi Note 10 Pro *sweet* (Snapdragon 732G / sm6150, Adreno 618, WCN3990, Bolero codec +
+  2× Awinic aw882xx, AMOLED 1080x2400 120 Hz panel).
 
-Lo userspace HarmonyOS (system, sys_prod, chip_prod, cust, patch) gira quasi intatto. Tutto quello che parla con
-l'hardware Kirin vive in `/vendor` ed è sostituito o neutralizzato dalle patch.
+The HarmonyOS userspace (system, sys_prod, chip_prod, cust, patch) runs almost untouched. Everything that talks
+to Kirin hardware lives in `/vendor` and is replaced or neutralised by the patches.
 
-## Avvio
+## Boot
 
 ```
-ABL Xiaomi ─► boot.img (header v2)
-               ├─ kernel LineageOS 4.14 + patch OpenHarmony (src/kernel/patches)
-               ├─ dtb sdmmagpie + dtbo di sweet
-               └─ ramdisk HarmonyOS dall'OTA + /init = hmos-preinit
+Xiaomi ABL ─► boot.img (header v2)
+               ├─ LineageOS 4.14 kernel + OpenHarmony patches (src/kernel/patches)
+               ├─ sdmmagpie dtb + sweet dtbo
+               └─ HarmonyOS ramdisk from the OTA + /init = hmos-preinit
 hmos-preinit (src/preinit)
-  1. legge i metadati LP della partizione super e crea un dm-linear per ogni partizione logica
-  2. scrive /etc/fstab.required (system, vendor, sys_prod, chip_prod, cust, patch → dm-N, erofs)
-  3. monta cache e avvia un logger: kmsg, istantanee di hilog/processi/servizi, screenshot
-  4. exec /bin/init_early (init originale di HarmonyOS)
-init HarmonyOS
-  ├─ /vendor/etc/fstab.sweet: data f2fs, cache come /log, dsp
-  └─ /vendor/etc/init/hmos2sweet.cfg: comandi e servizi delle patch scelte
+  1. reads the LP metadata of the super partition and creates a dm-linear for every logical partition
+  2. writes /etc/fstab.required (system, vendor, sys_prod, chip_prod, cust, patch → dm-N, erofs)
+  3. mounts cache and starts a logger: kmsg, snapshots of hilog/processes/threads/services, screenshot
+  4. androidboot.mode=charger (off-mode charging): stays in a minimal loop, see below
+  5. exec /bin/init_early (HarmonyOS's own init)
+HarmonyOS init
+  ├─ /vendor/etc/fstab.sweet: data f2fs, cache as /log, dsp
+  └─ /vendor/etc/init/hmos2sweet.cfg: commands and services of the selected patches
 ```
 
-Riga di comando del kernel (`lib/builder.py`): `hardware=sweet` (sceglie `fstab.sweet`), `hmos.permissive=1`
-(SELinux permissive anche se init chiede enforcing), `hmos.noreboot=1` (un servizio critico che crasha non riavvia
-il telefono), `firmware_class.path=/vendor/firmware`, `service_locator.enable=1`.
+Kernel command line (`lib/builder.py`): `hardware=sweet` (selects `fstab.sweet`), `hmos.permissive=1`
+(SELinux permissive even if init asks for enforcing), `hmos.noreboot=1` (a crashing critical service does not
+reboot the phone), `firmware_class.path=/vendor/firmware`, `service_locator.enable=1`.
 
 ## Kernel (src/kernel/patches)
 
-| Patch | Perché |
+| Patch | Why |
 |---|---|
-| 0001 userspace bring-up | driver `/dev/access_token_id`, ioctl binder `BINDER_GET_SENDER_INFO`/`ACCESS_TOKEN`, opzioni `hmos.*` |
-| 0002 binderfs off, sysrq/noreboot, DRM | init di HarmonyOS crea i nodi binder da uevent |
-| 0003 DRM auth per i HAL | composer, allocatore e Mesa condividono `/dev/dri/card0` senza essere DRM master |
-| 0004/0005 hmdfs/sharefs emulati | storage_daemon monta hmdfs/sharefs: emulati con tmpfs + bind |
-| 0006/0007 fs-verity stub | installd attiva la firma del codice: accettata su un kernel senza fs-verity |
-| 0008 percorsi firmware | firmware di modem/ADSP da `/vendor/firmware_mnt/image` e `/vendor/dsp` |
-| 0009 binder one-way sender pid | OpenHarmony usa il pid del mittente anche per le transazioni asincrone |
-| 0010 log icnss | messaggi di debug del WiFi nel kmsg (bring-up) |
-| 0011 BDF WLAN | il kernel invia bdwlan al firmware WLAN (su Android lo fa cnss-daemon) |
-| 0012 reboot panic | `hmos.noreboot=1` rifiuta anche i riavvii `panic:<motivo>` |
-| 0013 SSR senza panic | un riavvio lento di ADSP/modem non manda più in panic il kernel |
+| 0001 userspace bring-up | `/dev/access_token_id` driver, binder ioctls `BINDER_GET_SENDER_INFO`/`ACCESS_TOKEN`, `hmos.*` options |
+| 0002 binderfs off, sysrq/noreboot, DRM | HarmonyOS init creates the binder nodes from uevents |
+| 0003 DRM auth for the HALs | composer, allocator and Mesa share `/dev/dri/card0` without being DRM master |
+| 0004/0005 emulated hmdfs/sharefs | storage_daemon mounts hmdfs/sharefs: emulated with tmpfs + bind |
+| 0006/0007 fs-verity stub | installd enables code signing: accepted on a kernel without fs-verity |
+| 0008 firmware paths | modem/ADSP firmware from `/vendor/firmware_mnt/image` and `/vendor/dsp` |
+| 0009 binder one-way sender pid | OpenHarmony uses the sender pid for asynchronous transactions too |
+| 0010 icnss log | WiFi debug messages in kmsg (bring-up) |
+| 0011 WLAN BDF | the kernel sends bdwlan to the WLAN firmware (cnss-daemon does it on Android) |
+| 0012 reboot panic | `hmos.noreboot=1` also refuses `panic:<reason>` reboots |
+| 0013 SSR without panic | a slow ADSP/modem restart no longer panics the kernel |
+| 0014 icnss BDF status | BDF download reported success as failure |
+| 0015 memcg | accepts the HarmonyOS memmgr hyperhold/zswapd files |
+| 0016 vibrator | the aw8624 also appears as `/sys/class/leds/vibrator` |
+| 0017 /sys/nfc | attributes Huawei's NFC stack reads (chip type, device node, config names) |
+| 0018 reboot log | logs who asks for power off/restart; `reboot("shutdown")` powers off |
 
-## Display e GPU
+## Display and GPU
 
-- **Composer** (`src/display/composer`, VDI OpenHarmony): DRM/KMS atomico sul driver SDE di sweet.
-  - Usa solo il connettore DSI. Il writeback "Virtual" non va considerato, altrimenti lo schermo resta nero.
-  - Gestisce piani hardware, eventi vblank (con vsync software di riserva) e DPMS + backlight sysfs.
-  - Il pannello ha un solo modo a 120 Hz; il composer espone anche un modo virtuale a 60 Hz per il gestore
-    del refresh (HGM).
-- **Allocatore** (`src/display/buffer`): buffer dma-buf tramite dumb buffer DRM, import YUV.
-- **Mesa 26** (`src/mesa`): freedreno su kgsl, piattaforma EGL OHOS (NativeWindow/NativeBuffer, import NV12/NV21).
-  Sostituisce `libEGL_impl.so`/`libGLESv*_impl.so` in `/vendor/lib64/chipsetsdk`.
-- dpi/cutout e politica HGM sono riscritti dai file dell'OTA e montati con bind sopra `/sys_prod` al boot.
+- **Composer** (`src/display/composer`, OpenHarmony VDI): atomic DRM/KMS on sweet's SDE driver.
+  - Only the DSI connector is used. The "Virtual" writeback connector must be ignored, otherwise the screen
+    stays black.
+  - Handles hardware planes, vblank events (with a software vsync fallback), DPMS + sysfs backlight.
+  - The panel has a single 120 Hz mode; the composer also exposes a virtual 60 Hz mode for the refresh rate
+    manager (HGM).
+  - Fence ownership: Huawei's composer service takes ownership of the release fences it gets (`Move()`), so the
+    VDI hands out each fence exactly once and never keeps or duplicates them. A leak here made the whole
+    system stall (most visibly during audio playback) and left the screen black after screen-on.
+- **Allocator** (`src/display/buffer`): dma-buf buffers through DRM dumb buffers, YUV formats.
+- **Mesa 26** (`src/mesa`): freedreno on kgsl, OHOS EGL platform (NativeWindow/NativeBuffer, NV12/NV21 import).
+  It replaces `libEGL_impl.so`/`libGLESv*_impl.so` in `/vendor/lib64/chipsetsdk`.
+- dpi/cutout and the HGM policy are rewritten from the OTA files and bind-mounted over `/sys_prod` at boot.
 
-## TEE assente
+## No TEE
 
-sweet non ha iTrustee. Due librerie "CA" Huawei aspetterebbero per sempre il TEE:
+sweet has no iTrustee. Huawei's "CA" libraries would wait forever for the TEE:
 
-- `libuserauth_daemon.z.so` → stub: nessuna credenziale, quindi lock screen senza PIN;
-- `libhuks_ca_hdi.z.so` → core HUKS di OpenHarmony su OpenSSL, con chiave radice software.
+- `libuserauth_daemon.z.so` → stub (patch 20): no credentials, swipe-only lock screen;
+- user_auth / pin_auth HDI services (patch 46) → OpenHarmony's REE implementation (drivers_peripheral
+  user_auth 3.0 / pin_auth 2.1), PIN data salted and hashed in `/data/service/el1/public/{userauth,pinauth}`;
+- `libhuks_ca_hdi.z.so` → OpenHarmony's HUKS core on OpenSSL with a software root key (patch 21).
 
-## Coprocessori Qualcomm
+## Qualcomm coprocessors
 
-Su Android ci pensano i demoni vendor. Qui ci sono le versioni libere di linux-msm, patchate per il kernel downstream:
+On Android the vendor daemons do this. Here the free linux-msm versions are used, patched for the downstream
+kernel:
 
-- `qrtr-ns`: name service QRTR, che sul 4.14 non è nel kernel;
-- `rmtfs`: memoria condivisa via UIO;
-- `tqftpserv`: file letti dalla partizione firmware;
-- `pd-mapper`: legge i `.jsn`.
+- `qrtr-ns`: QRTR name service, not in the 4.14 kernel;
+- `rmtfs`: shared memory through UIO;
+- `tqftpserv`: files read from the firmware partition;
+- `pd-mapper`: reads the `.jsn` files.
 
-A questi si aggiunge `sweet-rproc`, che:
+On top of them `sweet-rproc`:
 
-1. monta la partizione firmware (vfat, che l'fstab di HarmonyOS non supporta);
-2. avvia `pd-mapper` e `tqftpserv`;
-3. accende l'ADSP se c'è `/vendor/etc/sweet/feature_audio`;
-4. accende il modem e chiede `wlan0` se c'è `feature_wifi`;
-5. apre i nodi ALSA all'host audio.
+1. mounts the firmware partition (vfat, not supported by the HarmonyOS fstab);
+2. starts `pd-mapper` and `tqftpserv`;
+3. boots the ADSP if `/vendor/etc/sweet/feature_audio` exists;
+4. loads the IPA firmware, boots the modem and asks for `wlan0` if `feature_wifi` exists;
+5. opens the ALSA nodes to the audio host;
+6. sets up `rmnet_ipa0` and the `rmnet_data*` interfaces for mobile data (in a child process).
 
 ## Audio
 
-`src/audio/sweet_audio_vdi.cpp` implementa l'interfaccia VDI che l'host audio di HarmonyOS carica da
-`/vendor/lib64/libaudio_primary_impl.z.so`. È basato su tinyalsa:
+`src/audio/sweet_audio_vdi.cpp` implements the VDI that the HarmonyOS audio host loads from
+`/vendor/lib64/libaudio_primary_impl.z.so`. It is based on tinyalsa:
 
-- PCM 0 (deep buffer) e 13 (low latency) in riproduzione, PCM 0 in cattura;
-- percorsi del mixer letti dai `mixer_paths_*.xml` originali di sweet: `speaker`, `headphones`, `handset`,
-  `handset-mic`;
-- senza scheda audio i frame vengono consumati in tempo reale, così il server audio non si blocca mai.
+- PCM 0 (deep buffer) and 13 (low latency) for playback, PCM 0 for capture;
+- mixer paths read from sweet's original `mixer_paths_*.xml`: `speaker`, `headphones`, `handset`, `handset-mic`;
+- without a sound card the frames are consumed in real time, so the audio server never blocks.
 
 ## Setup wizard
 
-Il wizard (`HwStartupGuide`) richiede WiFi. La patch 50:
+The wizard (`HwStartupGuide`) needs WiFi. It is kept by default; patch 50 (off by default):
 
-- lo toglie da `system.img` e dalla lista di preinstallazione;
-- fa partire `sweet-oobedone`, che scrive `device_provisioned`, `user_setup_complete` e `basic_statement_agreed`
-  nel database settingsdata.
+- removes it from `system.img` and from the preinstall list;
+- starts `sweet-oobedone`, which writes `device_provisioned`, `user_setup_complete` and `basic_statement_agreed`
+  into the settingsdata database.
 
-Senza queste chiavi SceneBoard cercherebbe di avviare il wizard a ogni boot.
+Without these keys SceneBoard would try to start the wizard on every boot.
 
-## Riavvii
+## Reboots
 
-Su un port un driver mancante basta per far crashare un servizio, e HarmonyOS reagisce riavviando:
+On a port a missing driver is enough to make a service crash, and HarmonyOS reacts by rebooting:
 
-- AMS riavvia il telefono se SceneBoard crasha 4 volte in 4 minuti (`supportSCBCrashReboot`);
-- init, quando un servizio "critical" (render_service, foundation, samgr, ...) crasha troppe volte, esegue il
-  job `reboot` (ferma tutti i servizi, smonta /data) e poi manda in panic il kernel.
+- AMS reboots the phone if SceneBoard crashes 4 times in 4 minutes (`supportSCBCrashReboot`);
+- when a "critical" service (render_service, foundation, samgr, ...) crashes too often, init runs the `reboot`
+  job (stops all services, unmounts /data) and then panics the kernel.
 
-La patch 15 spegne il primo e toglie il flag critical: nei cfg di vendor direttamente, per quelli di system
-dichiarando di nuovo il servizio in `/vendor/etc/init/hmos2sweet_nocritical.cfg` (init, build musl, aggiorna
-un servizio già definito). Il kernel (0013) non va più in panic se un coprocessore ci mette più di 20 s a
-ripartire.
+Patch 15 turns off the first and clears the critical flag: directly in the vendor cfgs, and for the system ones
+by declaring the service again in `/vendor/etc/init/hmos2sweet_nocritical.cfg` (init, musl build, updates an
+already defined service). The kernel (0013) no longer panics if a coprocessor takes more than 20 s to restart.
 
-## Sensori
+## Power off and off-mode charging
 
-I sensori di sm6150 sono nello Snapdragon Sensor Core, sull'ADSP. Due pezzi:
+With a charger plugged in, "power off" makes the PMIC start the phone again and the bootloader passes
+`androidboot.mode=charger`. Android would show its charging screen; booting HarmonyOS there looks like a reboot.
+`hmos-preinit` instead stays in a small loop: the screen is off, charging goes on in hardware, unplugging the
+cable powers the phone off, holding the power key for 1.5 s restarts into HarmonyOS. `hmos.charger=boot` on the
+kernel command line disables this.
 
-- `hexagonrpcd` (patch 34) serve al dominio sensori dell'ADSP i file di configurazione e il registro;
-- `libhdi_sensor_impl.z.so` (patch 39, `src/sensors`) è il VDI che l'host sensori di HarmonyOS carica. Parla
-  con il servizio QMI "SNS client" (400) su QRTR come l'HAL Android: cerca il SUID di `accel`, `gyro`, `mag`,
-  `ambient_light`, `gravity`, `rotv`, `game_rv`, invia le richieste di configurazione in protobuf e
-  inoltra gli eventi. Se l'SSC non ha `gravity` la calcola dall'accelerometro (serve alla rotazione).
+## Sensors
 
-## Termica, USB, demoni Kirin
+sm6150's sensors are in the Snapdragon Sensor Core, on the ADSP. Two pieces:
 
-- Patch 36: l'HDI termico legge le thermal zone reali (CPU, GPU, batteria, retro, connettore USB) e il
-  servizio termico usa una politica per sweet. La limitazione di CPU/GPU resta al kernel.
-- Patch 38: `/system/etc/init.usb.cfg` importa `/vendor/etc/init.${ohos.boot.hardware}.usb.cfg`; la patch
-  scrive `init.sweet.usb.cfg` dal file Kirin dell'OTA con il controller `a600000.dwc3`.
-- Patch 37: i demoni Huawei che parlano solo con hardware Kirin (THP, sensorhub, Balong, NPU, TEE, ...) non
-  vengono avviati.
+- `hexagonrpcd` (patch 34) serves the ADSP sensors domain its configuration files and registry;
+- `libhdi_sensor_impl.z.so` (patch 39, `src/sensors`) is the VDI the HarmonyOS sensor host loads. It talks to
+  the QMI "SNS client" service (400) over QRTR like the Android HAL: it looks up the SUID of `accel`, `gyro`,
+  `mag`, `ambient_light`, `gravity`, `rotv`, `game_rv`, sends the configuration requests in protobuf and
+  forwards the events. If the SSC has no `gravity` it computes it from the accelerometer (needed for rotation).
 
-## Mount nel job pre-init
+## Thermal, USB, Kirin daemons
 
-init crea le sandbox dei servizi (`mksandbox system`, `mksandbox chipset` nel job `init`) con bind `rec` +
-`private`: un mount fatto dopo non è visibile ai servizi in sandbox (foundation/DMS, render_service, host HDF
-come Bluetooth). Per questo tutti i mount delle patch (partizioni modem, bluetooth e persist, file di
-configurazione sostituiti in /sys_prod e /system/etc) stanno nel job `pre-init`, prima delle sandbox.
+- Patch 36: the thermal HDI reads the real thermal zones (CPU, GPU, battery, back, USB connector) and the
+  thermal service uses a policy for sweet. CPU/GPU throttling stays in the kernel.
+- Patch 38: `/system/etc/init.usb.cfg` imports `/vendor/etc/init.${ohos.boot.hardware}.usb.cfg`; the patch
+  writes `init.sweet.usb.cfg` from the OTA's Kirin file with the `a600000.dwc3` controller.
+- Patch 37: Huawei daemons that only talk to Kirin hardware (THP, sensorhub, Balong, NPU, TEE, ...) are not
+  started.
 
-## Telefonia, GPS, infrarossi (iter31)
+## Mounts in the pre-init job
 
-- **RIL** (`src/ril`, patch `42-ril`): sostituisce `libril_msgtransfer.z.so` (il RIL Balong di Huawei)
-  con una libreria che implementa `RilInitOps` di `telephony_ril_adapter` (OpenHarmony 5.1, stesse
-  tabelle di funzioni del `libhril.z.so` Huawei) e parla con i servizi QMI del modem via QRTR:
-  DMS (radio, IMEI, baseband), UIM (stato SIM, PIN/PUK, lettura/scrittura file, IMSI, ICCID, APDU),
-  NAS (registrazione, segnale, operatore, selezione rete, tipo di rete, ora di rete), VOICE (chiamate
-  CS), WMS (SMS 3GPP) e WDS/WDA (dati). Un `ServiceWatcher` segue il name service QRTR e
-  ricollega i client quando il modem riparte.
-- **Dati mobili**: `sweet-rproc` configura `rmnet_ipa0` (formato QMAP in/out) e crea `rmnet_data0..3`
-  (mux id 1..4) via rtnetlink; il RIL imposta il formato dati sul modem (WDA, endpoint IPA
-  "embedded"), lega un client WDS per chiamata dati al mux e restituisce indirizzi/DNS al
-  telephony stack, che configura l'interfaccia.
-- **Audio in chiamata**: lo scene `AUDIO_IN_CALL` sul render primario avvia il front end
-  `VoiceMMode1` (PCM hostless) con i mixer path stock `voicemmode1-call <dispositivo>`.
-- **GPS** (`src/gnss`, patch `44-gnss`): `vendorGnssAdapter.so` per il servizio GNSS HDI di
-  OpenHarmony, su QMI LOC (posizioni, satelliti, NMEA).
-- **Infrarossi** (`src/ir`, patch `43-consumer-ir`): `libconsumerir.so` caricata dal servizio IR di
-  Huawei, trasmette tramite `/dev/lirc0`.
-- **Vibrazione**: patch kernel 0016, l'aw8624 compare anche come `/sys/class/leds/vibrator`.
+init creates the service sandboxes (`mksandbox system`, `mksandbox chipset` in the `init` job) with `rec` +
+`private` binds: a mount made later is not visible to sandboxed services (foundation/DMS, render_service, HDF
+hosts such as Bluetooth). That is why all the patch mounts (modem, bluetooth and persist partitions,
+configuration files replaced in /sys_prod and /system/etc) are in the `pre-init` job, before the sandboxes.
+
+## Telephony, GPS, infrared
+
+- **RIL** (`src/ril`, patch `42-ril`): replaces `libril_msgtransfer.z.so` (Huawei's Balong RIL) with a library
+  implementing `RilInitOps` of `telephony_ril_adapter` (OpenHarmony 5.1, same function tables as Huawei's
+  `libhril.z.so`) that talks to the modem's QMI services over QRTR: DMS (radio, IMEI, baseband), UIM (SIM state,
+  PIN/PUK, file read/write, IMSI, ICCID, APDU), NAS (registration, signal, operator, network selection, network
+  type, network time), VOICE (CS calls), WMS (3GPP SMS) and WDS/WDA (data). A `ServiceWatcher` follows the QRTR
+  name service and reconnects the clients when the modem restarts.
+- **Supplementary services** (`ril_ss.cpp`): call waiting, call forwarding, call barring and barring password,
+  CLIP/CLIR, USSD (send, answer, network-initiated reports, UCS-2 decoding) through QMI VOICE.
+- **IMS / VoLTE** (`ril_ims.cpp`): voice domain preference (`persist.sweet.volte_only`, default PS only),
+  IMS settings enabled on the modem (IMS settings service 0x12), IMSA registration indications, and when LTE
+  stays unregistered for IMS the "ims" APN PDN is brought up through IMSDCM. Untested.
+- **Mobile data**: `sweet-rproc` configures `rmnet_ipa0` (QMAP in/out) and creates `rmnet_data0..3` (mux id
+  1..4) through rtnetlink; the RIL sets the data format on the modem (WDA, IPA "embedded" endpoint), binds a WDS
+  client per data call to the mux and returns addresses/DNS to the telephony stack, which configures the
+  interface.
+- **In-call audio**: the `AUDIO_IN_CALL` scene on the primary render starts the `VoiceMMode1` front end
+  (hostless PCM) with the stock `voicemmode1-call <device>` mixer paths.
+- **GPS** (`src/gnss`, patch `44-gnss`): `vendorGnssAdapter.so` for OpenHarmony's GNSS HDI service, on QMI LOC
+  (positions, satellites, NMEA).
+- **Infrared** (`src/ir`, patch `43-consumer-ir`): `libconsumerir.so`, loaded by Huawei's IR service, transmits
+  through `/dev/lirc0`.
+- **Vibration**: kernel patch 0016, the aw8624 also appears as `/sys/class/leds/vibrator`.
+
+## NFC
+
+sweet's NXP PN553 is driven by the Qualcomm `nq-nci` driver (`/dev/nq-nci`). Huawei's NFC stack (NXP-based
+`libnfc_hal_impl_t001` + `libnfc_nci_t001`) reads its configuration from `/sys/nfc/*`: kernel patch 0017 provides
+those attributes (chip type `sn110u` selects the NXP libraries). Patch 45 replaces the SN110 configuration with
+sweet's PN553 one and hides the SN110 firmware library so that the HAL never tries to flash it.
+
+## Camera (work in progress)
+
+The camera sensors, ISP and JPEG encoder of sweet are only usable through Qualcomm's Android camera HAL
+(CamX, `camera.qcom.so`, camera3). The plan, being implemented in `src/camera`:
+
+- **sweetcam-launch** (static): creates a private mount namespace that looks like a minimal Android
+  (`/system`, `/vendor`, `/apex/com.android.runtime` from `/vendor/android`), writes an Android property area
+  (vendor build.prop + `ro.boot.*` from the kernel command line) and runs cambridge, restarting it if it dies.
+- **cambridge** (bionic): loads `camera.qcom.so` and the Qualcomm gralloc, describes every camera, configures
+  streams, runs the repeating preview request and single captures (JPEG), and hands the gralloc buffers
+  (dma-buf) to the host once over a unix socket (`sweetcam_proto.h`).
+- **sweet camera host** (musl, OpenHarmony camera HDI v1.0): registers `camera_service` with the HDF service
+  manager like Huawei's CameraDaemon did, converts the camera description into OpenHarmony abilities, maps the
+  controls (zoom, focus, flash, exposure, JPEG orientation/quality, GPS) and copies every frame into the
+  BufferProducer of the stream (NV21/NV12/JPEG), so every app using the camera API works.
+
+## fetchfw
+
+`fetchfw.py` (`lib/fetchfw.py`) finds Pura 70 full packages: catalog, user list, optional query to Huawei's
+update service. Each candidate is verified remotely with HTTP range requests (zip64 central directory,
+`packageinfo.mbn`, `VERSION.mbn`, `update.tag`) and accepted only if it is a full BASE package of an `ADY-*`
+device. The download is resumable and checked against the sha256 in `filelist.xml`.

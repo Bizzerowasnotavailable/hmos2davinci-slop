@@ -98,3 +98,20 @@ for f in $(find "$P" -name '*.so'); do
   case "$out" in *" 0 missing;"*) ;; *) echo "$out"; bad=1;; esac
 done
 [ $bad = 0 ] || { echo "unresolved symbols, not shipping"; exit 1; }
+
+# camera host (OpenHarmony camera HDI v1.0 on top of cambridge), patch 47
+C=$B/camera; mkdir -p "$C"
+CI="-I$S/camera/host -I$S/camera/include -I$S/camera/hdi-gen -I$S/camera/hdi-gen/camera \
+ -I$O/hdf_core/interfaces/inner_api/hdi -I$O/hdf_core/interfaces/inner_api/hdi/base -I$O/hdf_core/interfaces/inner_api/utils \
+ -I$O/hdf_core/interfaces/inner_api/osal/shared -I$O/hdf_core/interfaces/inner_api/osal/uhdf -I$O/hdf_core/interfaces/inner_api/ipc \
+ -I$O/hdf_core/interfaces/inner_api/core -I$O/hdf_core/interfaces/inner_api/host/uhdf \
+ -I$O/communication_ipc/interfaces/innerkits/ipc_core/include -I$O/commonlibrary_c_utils/base/include \
+ -I$O/hiviewdfx_hilog/interfaces/native/innerkits/include -I$O/graphic_graphic_surface/interfaces/inner_api/surface \
+ -I$O/graphic_graphic_surface/interfaces/inner_api/utils -I$O/graphic_graphic_surface/interfaces/inner_api/common -I$BCF"
+for f in "$S"/camera/host/*.cpp "$S"/camera/hdi-gen/camera/v1_0/{camera_host_stub,camera_device_stub,stream_operator_stub,offline_stream_operator_stub,camera_host_callback_proxy,camera_device_callback_proxy,stream_operator_callback_proxy,types}.cpp; do
+  ohos-clang++ -std=c++17 -O2 -fPIC -fno-rtti -Wno-everything $CI -c "$f" -o "$C/$(basename "${f%.cpp}").o"
+done
+# libmetadata / libbuffer_producer_sequenceable come from system.img (chipset sdk), copied by make_sysroot.sh
+ohos-clang++ -fPIE -pie -o "$C/sweet_camera_host" "$C"/*.o -lmetadata.z -lbuffer_producer_sequenceable_1.0.z -lsurface.z \
+  -lipc_single.z -lutils.z -lhilog -lhdi.z -lhdf_utils.z -lsec_shared.z -lc++ -lc
+llvm-strip "$C/sweet_camera_host"; cp "$C/sweet_camera_host" "$P/47-camera/files/bin/"

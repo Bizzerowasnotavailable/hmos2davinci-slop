@@ -1,46 +1,51 @@
-# Ricompilare i binari
+# Rebuilding the binaries
 
-`hmos2sweet.py` usa i binari già compilati in `prebuilt/` e `patches/*/files/`. Ricompilarli serve solo se
-modifichi i sorgenti in `src/`. Tutti gli script stanno in `build/` e leggono le impostazioni da `build/env.sh`.
+`hmos2sweet.py` uses the binaries already built in `prebuilt/` and `patches/*/files/`. Rebuilding them is only
+needed if you change the sources in `src/`. All scripts are in `build/` and read their settings from
+`build/env.sh`.
 
-| Script | Produce | Serve |
+| Script | Produces | Needs |
 |---|---|---|
-| `build_kernel.sh` | `prebuilt/kernel/{Image.gz,xiaomi-sdmmagpie.dtb,dtbo.img}` | clang/lld 15+, binutils `aarch64-linux-gnu-` e `arm-linux-gnueabi-` |
-| `build_static.sh` | hmos-preinit, sweet-rproc, qrtr/rmtfs/tqftpserv/pd-mapper, sweet-oobedone, sqlite3, CameraDaemon | `aarch64-linux-gnu-gcc` (glibc statico) |
-| `fetch_oh_sources.sh` | sorgenti OpenHarmony 5.1 (header HDI/HDF, HUKS, OpenSSL) | git |
-| `make_sysroot.sh <work>` | sysroot HarmonyOS per `ohos-clang` | una cartella `work` di hmos2sweet (`ota/system.img`, `ota/vendor.img`) |
-| `build_ohos.sh` | composer + allocatore, audio, user_auth, HUKS | clang/lld, llvm-strip, sysroot, sorgenti OH |
+| `build_kernel.sh` | `prebuilt/kernel/{Image.gz,xiaomi-sdmmagpie.dtb,dtbo.img}` | clang/lld 15+, `aarch64-linux-gnu-` and `arm-linux-gnueabi-` binutils |
+| `build_static.sh` | hmos-preinit, sweet-rproc, qrtr/rmtfs/tqftpserv/pd-mapper, sweet-oobedone, sqlite3, CameraDaemon placeholder | `aarch64-linux-gnu-gcc` (static glibc) |
+| `fetch_oh_sources.sh` | OpenHarmony 5.1 sources (HDI/HDF headers, HUKS, OpenSSL) | git |
+| `make_sysroot.sh <work>` | HarmonyOS sysroot for `ohos-clang` | an hmos2sweet `work` folder (`ota/system.img`, `ota/vendor.img`) |
+| `build_ohos.sh` | composer + allocator, audio, user_auth, HUKS, sensors, RIL, GNSS, IR | clang/lld, llvm-strip, sysroot, OH sources |
+| `build_iam.sh` | OpenHarmony REE user_auth / pin_auth HDI services (patch 46) | as above + hdi-gen output for user_auth/pin_auth |
+| `build_camera_android.sh` | cambridge (bionic) + sweetcam-launch (static), patch 47 | clang/lld, AOSP headers in `$AOSP`, bionic runtime of a sweet ROM in `$ANDROID_LIBS` + crt objects in `$ANDROID_CRT` |
 | `build_mesa.sh` | Mesa (EGL/GLES + gallium freedreno) | meson, ninja, python3-mako/yaml, `MESA_SRC` (Mesa 26.1-devel) |
-| `build_all.sh <work>` | tutto quanto sopra | |
+| `build_all.sh <work>` | everything above | |
 
-## Note
+## Notes
 
-- **`ohos-clang`** compila per `aarch64-linux-ohos` (musl di OpenHarmony). Usa la libc++ con namespace ABI `__h`,
-  la stessa di HarmonyOS, quindi i binari si linkano contro le librerie di sistema del telefono.
+- **`ohos-clang`** builds for `aarch64-linux-ohos` (OpenHarmony's musl). It uses libc++ with the `__h` ABI
+  namespace, the same as HarmonyOS, so the binaries link against the phone's system libraries.
 - **Sysroot**:
-  - header e oggetti crt vengono da `build/sysroot-base.tar.xz` (musl, libc++, UAPI Linux, libdrm, tutto open
+  - headers and crt objects come from `build/sysroot-base.tar.xz` (musl, libc++, Linux UAPI, libdrm, all open
     source);
-  - le librerie `.so` contro cui linkare vengono copiate dalle immagini dell'OTA, per questo `make_sysroot.sh`
-    vuole la cartella `work` di una conversione.
-- **Kernel**: base LineageOS `android_kernel_xiaomi_sm6150`, ramo `lineage-24.0`, commit `e03e5ba22`, con
-  configurazione `vendor/sdmsteppe-perf_defconfig vendor/sweet.config vendor/ohos.config`.
-- **Mesa**: la patch `src/mesa/0001-mesa-ohos-platform-for-sweet.patch` è stata fatta su
-  `mesa-for-android-container-adreno` 26.1.0-devel. Su altre versioni di Mesa 26 potrebbe servire qualche
-  ritocco.
+  - the `.so` libraries to link against are copied from the OTA images, which is why `make_sysroot.sh` wants the
+    `work` folder of a conversion.
+- **Kernel**: LineageOS `android_kernel_xiaomi_sm6150`, branch `lineage-24.0`, commit `e03e5ba22`, with
+  `vendor/sdmsteppe-perf_defconfig vendor/sweet.config vendor/ohos.config`.
+- **Mesa**: `src/mesa/0001-mesa-ohos-platform-for-sweet.patch` was made on `mesa-for-android-container-adreno`
+  26.1.0-devel. Other Mesa 26 versions may need small adjustments.
+- **Camera (work in progress)**: `src/camera/bridge/cambridge.c` is built for Android (bionic) with clang
+  `--target=aarch64-linux-android33`, the AOSP bionic/libhardware/system_core/system_media headers and linked
+  against the bionic libraries of a sweet Android ROM; `src/camera/launcher` is a static glibc binary.
 
-## Aggiungere una patch
+## Adding a patch
 
-1. Crea `patches/NN-nome/patch.json` con questi campi:
+1. Create `patches/NN-name/patch.json` with:
    - `name`, `description`, `default`;
-   - `requires` per le dipendenze;
-   - le azioni: `vendor_files` (`src`/`dst`/`mode`), `vendor_dirs`, `vendor_remove`, `system_remove`,
-     `sweet_blobs` (`from`/`to`, con la `/` finale per le cartelle), `markers`, `ueventd`;
-   - `init`, con `jobs` e `services` nel formato cfg di init HarmonyOS.
-2. I binari vanno in `patches/NN-nome/files/` e i sorgenti in `src/`.
-3. Per modificare file presi dall'OTA aggiungi `hook.py` con una funzione `apply(ctx)`. Da `ctx` hai:
-   - `ctx.vendor` e `ctx.system()`: alberi EROFS, con `read`/`write`/`add_file`/`remove`/`exists`;
-   - `ctx.image_file(partizione, percorso)` per leggere un file da un'immagine intatta;
-   - `ctx.save_removed()` per salvare i file tolti.
-4. `python3 tools/gen_patch_docs.py` aggiorna `docs/PATCHES.md`.
+   - `requires` for dependencies;
+   - the actions: `vendor_files` (`src`/`dst`/`mode`), `vendor_dirs`, `vendor_remove`, `system_remove`,
+     `sweet_blobs` (`from`/`to`, trailing `/` for folders), `markers`, `ueventd`;
+   - `init`, with `jobs` and `services` in the HarmonyOS init cfg format.
+2. Binaries go to `patches/NN-name/files/`, sources to `src/`.
+3. To modify files taken from the OTA add a `hook.py` with an `apply(ctx)` function. `ctx` provides:
+   - `ctx.vendor` and `ctx.system()`: EROFS trees with `read`/`write`/`add_file`/`remove`/`exists`;
+   - `ctx.image_file(partition, path)` to read a file from an untouched image;
+   - `ctx.save_removed()` to keep the removed files.
+4. `python3 tools/gen_patch_docs.py` updates `docs/PATCHES.md`.
 
-I numeri decidono l'ordine di applicazione e l'ordine dei comandi nel cfg di init.
+The numbers decide the order in which patches are applied and the order of the commands in the init cfg.
