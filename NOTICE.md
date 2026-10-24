@@ -4,7 +4,7 @@
 |---|---|---|
 | `hmos2sweet.py`, `fetchfw.py`, `lib/`, `patches/*/patch.json`, `patches/*/hook.py`, `tools/`, `build/*.sh`, `flash/` | this project | Apache-2.0 |
 | `src/kernel/patches`, `prebuilt/kernel` | LineageOS android_kernel_xiaomi_sm6150 + this project's patches (parts from OpenHarmony kernel_linux_5.10) | GPL-2.0 |
-| `src/preinit`, `prebuilt/ramdisk/init` | this project | GPL-2.0 |
+| `src/preinit`, `prebuilt/ramdisk/init`, `prebuilt/tools/lpwrite` | this project | GPL-2.0 |
 | `src/display`, `patches/10-display/files` | derived from OpenHarmony drivers_peripheral (display) | Apache-2.0 |
 | `src/display/hdi-gen` | headers generated from OpenHarmony HDI IDLs | Apache-2.0 |
 | `src/audio/vdi` | OpenHarmony drivers_peripheral audio VDI headers | Apache-2.0 |

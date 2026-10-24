@@ -11,6 +11,7 @@ S=$REPO/src
 B=$WORK/static; mkdir -p "$B"
 
 $CC -w -I"$S/preinit" -o "$REPO/prebuilt/ramdisk/init" "$S/preinit/preinit.c" && $STRIP "$REPO/prebuilt/ramdisk/init"
+mkdir -p "$REPO/prebuilt/tools" && $CC -w -o "$REPO/prebuilt/tools/lpwrite" "$S/preinit/lpwrite.c" && $STRIP "$REPO/prebuilt/tools/lpwrite"
 $CC -w -o "$P/30-remoteproc/files/bin/sweet-rproc" "$S/remoteproc/sweet-rproc.c"
 $CC -o "$P/22-camera-daemon-idle/files/bin/CameraDaemon" "$S/idle/idle.c"
 
