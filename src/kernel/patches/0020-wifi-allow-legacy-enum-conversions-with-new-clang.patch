@@ -1,0 +1,18 @@
+From: hmos2sweet <hmos2sweet@localhost>
+Subject: [PATCH] wifi: allow legacy enum conversions with newer Clang
+
+The legacy WLAN stack mixes A_STATUS and QDF_STATUS. Clang 21 enables a
+new enum-conversion warning, which WLAN's local -Werror makes fatal.
+Keep the diagnostics, but do not promote this one warning to an error.
+Scope the exception to WLAN and retain all other error checks.
+
+diff --git a/drivers/staging/qcacld-3.0/Kbuild b/drivers/staging/qcacld-3.0/Kbuild
+--- a/drivers/staging/qcacld-3.0/Kbuild
++++ b/drivers/staging/qcacld-3.0/Kbuild
+@@ -1,3 +1,6 @@
++# Legacy WLAN status enums trigger a new diagnostic in Clang 21.
++ccflags-y += $(call cc-option,-Wno-error=implicit-enum-enum-cast)
++
+ # We can build either as part of a standalone Kernel build or as
+ # an external module.  Determine which mechanism is being used
+ ifeq ($(MODNAME),)

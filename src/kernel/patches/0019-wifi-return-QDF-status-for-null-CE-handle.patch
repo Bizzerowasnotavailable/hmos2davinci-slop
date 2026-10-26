@@ -1,0 +1,16 @@
+From: hmos2sweet <hmos2sweet@localhost>
+Subject: [PATCH] wifi: return QDF status for a null CE handle
+
+ce_send_single is a QDF_STATUS function. Returning the unrelated A_STATUS
+enum fails with Clang 21's implicit-enum-enum-cast diagnostic under Werror.
+
+diff --git a/drivers/staging/qca-wifi-host-cmn/hif/src/ce/ce_main.c b/drivers/staging/qca-wifi-host-cmn/hif/src/ce/ce_main.c
+--- a/drivers/staging/qca-wifi-host-cmn/hif/src/ce/ce_main.c
++++ b/drivers/staging/qca-wifi-host-cmn/hif/src/ce/ce_main.c
+@@ -2133,5 +2133,5 @@
+ 	if (qdf_unlikely(!ce_hdl)) {
+ 		HIF_ERROR("%s: error CE handle is null", __func__);
+-		return A_ERROR;
++		return QDF_STATUS_E_FAILURE;
+ 	}
+ 
