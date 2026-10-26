@@ -57,6 +57,17 @@ case-sensitive paths such as `etc/NFC` and `etc/nfc`.
 
 ## Adding a patch
 
+### Flash-script regression tests
+
+Run `python3 -m unittest discover -s tests -v` from the repository root.
+On Linux/WSL the tests run generated `.sh` installers against **fake fastboot**,
+compare their command order with `.bat`, check failure handling and the clean
+install confirmation, and verify LF line endings. They never contact a phone.
+POSIX execution tests are skipped on Windows; generation checks still run.
+This does not replace an end-to-end device installation test.
+
+### Patch layout
+
 1. Create `patches/NN-name/patch.json` with:
    - `name`, `description`, `default`;
    - `requires` for dependencies;

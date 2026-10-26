@@ -17,6 +17,11 @@ def _sh(lines):
     return "\n".join(lines) + "\n"
 
 
+def _sh_setup():
+    return ["set -e", 'OUT=$(CDPATH= cd -P "$(dirname "$0")" && pwd)',
+            'PATH="$OUT:$PATH"; export PATH']
+
+
 SUPER_DEV = "S=/dev/block/by-name/super; [ -e $S ] || S=/dev/block/bootdevice/by-name/super"
 
 
@@ -117,16 +122,16 @@ def write(out, super_parts, summary, device=None):
           'fastboot flash dtbo "%OUT%dtbo.img" || goto :err',
           'fastboot --disable-verity --disable-verification flash vbmeta "%OUT%vbmeta.img" || goto :err' if davinci else "",
           'fastboot flash boot "%OUT%boot.img" || goto :err',
-          "fastboot reboot",
+          "fastboot reboot || goto :err",
           "echo Done. First boot takes a few minutes.",
           "exit /b 0", ":err", "echo FAILED at the previous step.", "exit /b 1", ""] + BAT_LPWRITE
-    open(os.path.join(out, "install_clean.bat"), "w", newline="").write(_bat(b))
+    with open(os.path.join(out, "install_clean.bat"), "w", newline="") as fh:
+        fh.write(_bat(b))
 
     s = ["#!/bin/sh", "# hmos2sweet - CLEAN INSTALL: erases Android/HarmonyOS and ALL user data.",
-         "# Phone in fastboot mode (Power + Volume Down), bootloader unlocked.",
-         'set -e; OUT=$(dirname "$0")',
-         'printf "This ERASES the phone. Type YES to continue: "; read OK; [ "$OK" = YES ] || exit 1',
-          "fastboot reboot fastboot"]
+         "# Phone in fastboot mode (Power + Volume Down), bootloader unlocked."] + _sh_setup() + [
+         'printf "This ERASES the phone. Type YES to continue: "; read -r OK; [ "$OK" = YES ] || exit 1',
+         "fastboot reboot fastboot"]
     for p in sorted(set(ANDROID_LOGICAL + HMOS_LOGICAL)):
         s.append("fastboot delete-logical-partition %s >/dev/null 2>&1 || true" % p)
     s += _sh_flash(parts, sizes, True, allow_lpwrite)
@@ -136,7 +141,8 @@ def write(out, super_parts, summary, device=None):
         s.append('fastboot --disable-verity --disable-verification flash vbmeta "$OUT/vbmeta.img"')
     s += ['fastboot flash boot "$OUT/boot.img"', "fastboot reboot",
           'echo "Done. First boot takes a few minutes."']
-    open(os.path.join(out, "install_clean.sh"), "w").write(_sh(s))
+    with open(os.path.join(out, "install_clean.sh"), "w", newline="\n") as fh:
+        fh.write(_sh(s))
 
     # ---------------------------------------------------------------- update, keeps data
     b = ["@echo off", "setlocal",
@@ -148,18 +154,22 @@ def write(out, super_parts, summary, device=None):
         b.append('fastboot --disable-verity --disable-verification flash vbmeta "%OUT%vbmeta.img" || goto :err')
     b += ['fastboot flash dtbo "%OUT%dtbo.img" || goto :err',
           'fastboot flash boot "%OUT%boot.img" || goto :err',
-          "fastboot reboot", "exit /b 0", ":err", "echo FAILED at the previous step.", "exit /b 1", ""] + BAT_LPWRITE
-    open(os.path.join(out, "update_keep_data.bat"), "w", newline="").write(_bat(b))
-    s = ["#!/bin/sh", "# hmos2sweet - UPDATE: reflashes the ROM, user data is KEPT.", 'set -e; OUT=$(dirname "$0")',
+           "fastboot reboot || goto :err", "exit /b 0", ":err", "echo FAILED at the previous step.", "exit /b 1", ""] + BAT_LPWRITE
+    with open(os.path.join(out, "update_keep_data.bat"), "w", newline="") as fh:
+        fh.write(_bat(b))
+    s = ["#!/bin/sh", "# hmos2sweet - UPDATE: reflashes the ROM, user data is KEPT."] + _sh_setup() + [
          "fastboot reboot fastboot"]
     s += _sh_flash(parts, sizes, False, allow_lpwrite)
     if davinci:
         s.append('fastboot --disable-verity --disable-verification flash vbmeta "$OUT/vbmeta.img"')
     s += ['fastboot flash dtbo "$OUT/dtbo.img"', 'fastboot flash boot "$OUT/boot.img"', "fastboot reboot"]
-    open(os.path.join(out, "update_keep_data.sh"), "w").write(_sh(s))
+    with open(os.path.join(out, "update_keep_data.sh"), "w", newline="\n") as fh:
+        fh.write(_sh(s))
 
-    for f in ("get_logs.bat", "get_logs.sh"):
-        shutil.copyfile(os.path.join(REPO, "flash", f), os.path.join(out, f))
+    shutil.copyfile(os.path.join(REPO, "flash", "get_logs.bat"), os.path.join(out, "get_logs.bat"))
+    with open(os.path.join(REPO, "flash", "get_logs.sh")) as source:
+        with open(os.path.join(out, "get_logs.sh"), "w", newline="\n") as target:
+            target.write(source.read())
     for f in os.listdir(out):
         if f.endswith(".sh"):
             os.chmod(os.path.join(out, f), 0o755)
