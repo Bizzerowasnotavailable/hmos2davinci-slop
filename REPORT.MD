@@ -3,7 +3,7 @@
 ## Outcome
 
 On **26 October 2026**, the device owner confirmed that HarmonyOS booted on a
-**Redmi K20 / Xiaomi Mi 9T (`davinci`, Snapdragon 730)**. The confirmation came
+**Redmi K20/Xiaomi Mi 9T (`davinci`, Snapdragon 730)**. The confirmation came
 after flashing the OHOS-patched davinci kernel and corrected preinit in a new
 boot image, plus vbmeta with verification disabled.
 
